@@ -1,0 +1,251 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+enum Role {
+  STUDENT
+  STAFF
+  GUARD
+  WARDEN
+  ADMIN
+  MAINTENANCE
+}
+enum Severity {
+  NORMAL
+  URGENT
+  EMERGENCY
+}
+enum ComplaintStatus {
+  NEW
+  ACKNOWLEDGED
+  ASSIGNED
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+  REOPENED
+}
+enum IncidentStatus {
+  REPORTED
+  ALERT_SENT
+  ACKNOWLEDGED
+  ACTION_INITIATED
+  IN_PROGRESS
+  RESOLUTION_SUBMITTED
+  VERIFIED
+  CLOSED
+}
+enum DeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+model User {
+  id String @id @default(cuid())
+  name String
+  email String @unique
+  passwordHash String
+  role Role
+  hostelId String?
+  roomId String?
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  hostel Hostel? @relation(fields:[hostelId],references:[id])
+  room Room? @relation(fields:[roomId],references:[id])
+  complaints Complaint[] @relation("Reporter")
+  assignedComplaints Complaint[] @relation("Assigned")
+  assignedIncidents SeriousIncident[] @relation("Authority")
+  reportedIncidents SeriousIncident[] @relation("IncidentReporter")
+  notifications Notification[]
+  escalations IncidentEscalation[] @relation("EscalatedBy")
+  receivedEscalations IncidentEscalation[] @relation("Recipient")
+  histories ComplaintHistory[]
+  incidentHistories IncidentHistory[]
+  feedback Feedback[]
+  resetToken PasswordResetToken?
+  @@index([hostelId,role])
+}
+model Hostel {
+  id String @id @default(cuid())
+  name String
+  address String?
+  createdAt DateTime @default(now())
+  users User[]
+  blocks Block[]
+  complaints Complaint[]
+  incidents SeriousIncident[]
+}
+model Block {
+  id String @id @default(cuid())
+  hostelId String
+  name String
+  hostel Hostel @relation(fields:[hostelId],references:[id],onDelete:Cascade)
+  rooms Room[]
+  @@unique([hostelId,name])
+}
+model Room {
+  id String @id @default(cuid())
+  blockId String
+  roomNumber String
+  floorNumber Int?
+  block Block @relation(fields:[blockId],references:[id],onDelete:Cascade)
+  users User[]
+  complaints Complaint[]
+  @@unique([blockId,roomNumber])
+}
+model ComplaintCategory {
+  id String @id @default(cuid())
+  name String @unique
+  isActive Boolean @default(true)
+  complaints Complaint[]
+}
+model Complaint {
+  id String @id @default(cuid())
+  complaintNumber String @unique
+  reporterId String
+  hostelId String
+  roomId String?
+  locationDescription String?
+  categoryId String
+  title String
+  description String
+  severity Severity @default(NORMAL)
+  status ComplaintStatus @default(NEW)
+  attachmentUrl String?
+  assignedTo String?
+  assignedBy String?
+  dueAt DateTime?
+  resolvedAt DateTime?
+  closedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  reporter User @relation("Reporter",fields:[reporterId],references:[id])
+  hostel Hostel @relation(fields:[hostelId],references:[id])
+  room Room? @relation(fields:[roomId],references:[id])
+  category ComplaintCategory @relation(fields:[categoryId],references:[id])
+  assignee User? @relation("Assigned",fields:[assignedTo],references:[id])
+  history ComplaintHistory[]
+  notifications Notification[]
+  feedback Feedback[]
+  incidents SeriousIncident[]
+  @@index([hostelId,status,severity,createdAt])
+  @@index([reporterId,createdAt])
+}
+model SeriousIncident {
+  id String @id @default(cuid())
+  incidentNumber String @unique
+  complaintId String?
+  reporterId String
+  hostelId String
+  incidentType String
+  locationDescription String
+  title String
+  description String
+  severity Severity @default(EMERGENCY)
+  status IncidentStatus @default(REPORTED)
+  assignedAuthorityId String?
+  acknowledgedAt DateTime?
+  dueAt DateTime?
+  resolvedAt DateTime?
+  closedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  reporter User @relation("IncidentReporter",fields:[reporterId],references:[id])
+  hostel Hostel @relation(fields:[hostelId],references:[id])
+  assignedAuthority User? @relation("Authority",fields:[assignedAuthorityId],references:[id])
+  complaint Complaint? @relation(fields:[complaintId],references:[id])
+  escalations IncidentEscalation[]
+  history IncidentHistory[]
+  notifications Notification[]
+  @@index([hostelId,status,severity,createdAt])
+}
+model IncidentEscalation {
+  id String @id @default(cuid())
+  incidentId String
+  escalatedBy String
+  recipientAuthorityId String
+  escalationReason String
+  escalationLevel Int
+  createdAt DateTime @default(now())
+  incident SeriousIncident @relation(fields:[incidentId],references:[id],onDelete:Cascade)
+  actor User @relation("EscalatedBy",fields:[escalatedBy],references:[id])
+  recipient User @relation("Recipient",fields:[recipientAuthorityId],references:[id])
+  @@unique([incidentId,recipientAuthorityId,escalationLevel])
+}
+model ComplaintHistory {
+  id String @id @default(cuid())
+  complaintId String
+  changedBy String
+  oldStatus String?
+  newStatus String
+  remarks String?
+  createdAt DateTime @default(now())
+  complaint Complaint @relation(fields:[complaintId],references:[id],onDelete:Cascade)
+  actor User @relation(fields:[changedBy],references:[id])
+}
+model IncidentHistory {
+  id String @id @default(cuid())
+  incidentId String
+  changedBy String
+  actionType String
+  oldStatus String?
+  newStatus String?
+  remarks String?
+  createdAt DateTime @default(now())
+  incident SeriousIncident @relation(fields:[incidentId],references:[id],onDelete:Cascade)
+  actor User @relation(fields:[changedBy],references:[id])
+  @@index([incidentId,createdAt])
+}
+model Notification {
+  id String @id @default(cuid())
+  recipientId String
+  complaintId String?
+  incidentId String?
+  title String
+  message String
+  channel String @default("IN_APP")
+  deliveryStatus DeliveryStatus @default(PENDING)
+  readAt DateTime?
+  sentAt DateTime?
+  createdAt DateTime @default(now())
+  recipient User @relation(fields:[recipientId],references:[id],onDelete:Cascade)
+  complaint Complaint? @relation(fields:[complaintId],references:[id],onDelete:Cascade)
+  incident SeriousIncident? @relation(fields:[incidentId],references:[id],onDelete:Cascade)
+  attempts NotificationAttempt[]
+  @@index([recipientId,readAt,createdAt])
+  @@index([incidentId,channel,deliveryStatus])
+}
+model NotificationAttempt {
+  id String @id @default(cuid())
+  notificationId String
+  provider String
+  attemptNumber Int
+  deliveryStatus DeliveryStatus
+  providerReference String?
+  errorMessage String?
+  attemptedAt DateTime @default(now())
+  notification Notification @relation(fields:[notificationId],references:[id],onDelete:Cascade)
+  @@unique([notificationId,attemptNumber])
+}
+model Feedback {
+  id String @id @default(cuid())
+  complaintId String
+  submittedBy String
+  rating Int
+  comments String?
+  createdAt DateTime @default(now())
+  complaint Complaint @relation(fields:[complaintId],references:[id],onDelete:Cascade)
+  actor User @relation(fields:[submittedBy],references:[id])
+  @@unique([complaintId,submittedBy])
+}
+model PasswordResetToken {
+  id String @id @default(cuid())
+  userId String @unique
+  tokenHash String @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+}
